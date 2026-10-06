@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  copilot-api:
+    build: .
+    ports:
+      - "8080:8080"
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_SECURE_COOKIE=false
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      - copilot-api
+
+volumes:
+  n8n_data:

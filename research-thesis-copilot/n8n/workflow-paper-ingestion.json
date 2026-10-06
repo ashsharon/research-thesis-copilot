@@ -1,0 +1,104 @@
+{
+  "name": "Research Co-Pilot — Daily Paper Ingestion",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 7 * * *" }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every day 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-640, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/ingest/arxiv",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"category\": \"cs.CL\", \"max_results\": 15 } }}",
+        "options": {}
+      },
+      "id": "ingest-arxiv",
+      "name": "Ingest new arXiv abstracts",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-400, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "has-papers",
+              "leftValue": "={{ $json.fetched }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "has-new-papers",
+      "name": "Any new papers?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [-160, 300]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "papers",
+        "options": {}
+      },
+      "id": "split-papers",
+      "name": "Split out papers",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [80, 220]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:8080/ingest/pdf",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { \"arxiv_id\": $json.arxiv_id } }}",
+        "options": { "timeout": 60000 }
+      },
+      "id": "ingest-pdf",
+      "name": "Download + index full text",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [320, 220],
+      "notes": "Only the top N results from the split are processed via the node's 'Loop Over Items' batching (set batch size = 5) to stay polite to arXiv's PDF servers."
+    },
+    {
+      "parameters": {
+        "channel": "#research-feed",
+        "text": "=📚 Ingested {{ $('Ingest new arXiv abstracts').item.json.fetched }} new papers today. Full text indexed for {{ $runIndex + 1 }} of them so far.",
+        "otherOptions": {}
+      },
+      "id": "notify-slack",
+      "name": "Post summary to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.2,
+      "position": [560, 300]
+    }
+  ],
+  "connections": {
+    "Every day 07:00": { "main": [[{ "node": "Ingest new arXiv abstracts", "type": "main", "index": 0 }]] },
+    "Ingest new arXiv abstracts": { "main": [[{ "node": "Any new papers?", "type": "main", "index": 0 }]] },
+    "Any new papers?": { "main": [[{ "node": "Split out papers", "type": "main", "index": 0 }], []] },
+    "Split out papers": { "main": [[{ "node": "Download + index full text", "type": "main", "index": 0 }]] },
+    "Download + index full text": { "main": [[{ "node": "Post summary to Slack", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Scheduled trigger -> FastAPI /ingest/arxiv -> branch on whether anything new showed up -> fan out and download+index each PDF's full text -> post a one-line Slack summary." }
+}

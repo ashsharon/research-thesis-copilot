@@ -1,0 +1,62 @@
+{
+  "name": "Research Co-Pilot — Weekly Digest Email",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0 8 * * 1" }
+          ]
+        }
+      },
+      "id": "cron-weekly",
+      "name": "Every Monday 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-600, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://localhost:8080/digest/weekly",
+        "options": { "timeout": 120000 }
+      },
+      "id": "get-digest",
+      "name": "Build digest (fetch + gap-analysis)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-360, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const papers = items[0].json.new_papers || [];\nconst gap = items[0].json.gap_analysis || '';\nconst recipient = items[0].json.recipient;\n\nconst paperList = papers.map(p => `<li><a href=\"${p.pdf_url}\">${p.title}</a> (${p.arxiv_id})</li>`).join('');\nconst gapHtml = gap.replace(/\\n/g, '<br/>');\n\nconst html = `\n  <h2>This week's papers</h2>\n  <ul>${paperList}</ul>\n  <h2>Where's the gap?</h2>\n  <p>${gapHtml}</p>\n`;\n\nreturn [{ json: { recipient, subject: `Research digest — ${new Date().toISOString().slice(0,10)}`, html } }];"
+      },
+      "id": "format-email",
+      "name": "Format digest email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-120, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.recipient }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "send-gmail",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [120, 300]
+    }
+  ],
+  "connections": {
+    "Every Monday 08:00": { "main": [[{ "node": "Build digest (fetch + gap-analysis)", "type": "main", "index": 0 }]] },
+    "Build digest (fetch + gap-analysis)": { "main": [[{ "node": "Format digest email", "type": "main", "index": 0 }]] },
+    "Format digest email": { "main": [[{ "node": "Send Gmail", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "description": "Weekly cron -> FastAPI /digest/weekly (fetches new abstracts, runs one LangGraph gap-analysis pass) -> format as HTML -> email via Gmail node." }
+}
